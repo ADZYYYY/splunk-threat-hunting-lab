@@ -116,5 +116,10 @@ Combining Sysmon process creation telemetry with PowerShell script block logging
 
 In this specific test case, Sysmon alone was enough to understand the activity because the suspicious PowerShell behaviour was visible directly in the command line.
 
+**PowerShell Event 4104** = What code ran inside PowerShell In General
+
+**Sysmon Event 1** = Shows how PowerShell was launched and includes the command line used at the time the PowerShell process was created.
+- For e.g, in this lab, the commands were run from CMD, which called powershell.exe and passed a command to it. This created a new PowerShell process each time, which triggered a new Sysmon Event ID 1 for each PowerShell launch.
+
 
 **Note:** Security event 4688 is another good one to check however its Less rich than Sysmon and command line must be separately enabled via policy. Enabling Sysmon provides more powerful process telemetry, but combining sysmon and powershell event 4104 seems to be the most powerful combination. 
