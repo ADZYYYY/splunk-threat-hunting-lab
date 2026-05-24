@@ -100,6 +100,10 @@ index=powershell earliest=-30m
 - Using the same method of running the field which contains the command activity, through a case to assign a detection tag
 - Then using Table to display the fields which were already parsed, as well as the manual field we created using regex "ScriptBlockText"
 
+**Results**
+
+<img width="2275" height="178" alt="image" src="https://github.com/user-attachments/assets/6515c749-b601-422f-b69c-0263d1623609" />
+
 
 
 ## Lessons Learned & Findings
