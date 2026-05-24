@@ -45,10 +45,6 @@ This Splunk query looks for PowerShell process creation events in Sysmon logs.
 It flags suspicious PowerShell command lines, such as encoded commands, execution policy bypass, hidden windows, downloads, inline execution, or -NoProfile.
 It then shows the time, host, user, parent process, PowerShell process, full command line, and the reason it was detected. 
 
-- Stores the CommandLine value in lowercase so the detection is case insensitive
-- The case() function checks the command line against several suspicious patterns and assigns a label.
-- Used rename function to make fields easier to read and understand
-
 SPL Query
 
 ```spl
@@ -67,6 +63,9 @@ index=sysmon EventCode=1 Image="*\\powershell.exe"
 | table _time host User ParentImage Image CommandLine detection_reason
 | rename ParentImage as "Parent Process", Image as "Process", CommandLine as "Command Line"
 ```
+- Stores the CommandLine value in lowercase so the detection is case insensitive
+- The case() function checks the command line against several suspicious patterns and assigns a label.
+- Used rename function to make fields easier to read and understand
 
 **Results**
 
