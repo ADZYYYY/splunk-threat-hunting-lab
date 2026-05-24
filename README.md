@@ -14,6 +14,7 @@ Build a practical home lab for learning threat hunting, Windows telemetry and de
 - Splunk Universal Forwarder (Configured on Victim machine to send logs to Ubuntu Server)
 - Sysmon with Olaf Hartong's Sysmon Modular config (https://github.com/olafhartong/sysmon-modular)
 - MITRE ATT&CK mapping from Olaf Hartong’s Sysmon config
+- Atomic Red Team for simulating threat actors (https://github.com/redcanaryco/atomic-red-team/tree/master)
 
 ## Planned Hunts
 
