@@ -117,4 +117,4 @@ Combining Sysmon process creation telemetry with PowerShell script block logging
 In this specific test case, Sysmon alone was enough to understand the activity because the suspicious PowerShell behaviour was visible directly in the command line.
 
 
-Note: Security event 4688 is another good one to check however its Less rich than Sysmon and command line must be separately enabled via policy. Turning on Sysmon is simply more powerfull, but combining sysmon and powershell event 4104 seems to be the most powerful combination. 
+**Note:** Security event 4688 is another good one to check however its Less rich than Sysmon and command line must be separately enabled via policy. Turning on Sysmon is simply more powerfull, but combining sysmon and powershell event 4104 seems to be the most powerful combination. 
