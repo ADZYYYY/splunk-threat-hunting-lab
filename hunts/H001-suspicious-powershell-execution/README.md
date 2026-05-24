@@ -127,7 +127,7 @@ index=powershell earliest=-30m
 
 **Results**
 
-<img width="2295" height="70" alt="image" src="https://github.com/user-attachments/assets/44e2dcab-7a12-419b-b38a-9fa2248bf500" />
+<img width="2164" height="161" alt="image" src="https://github.com/user-attachments/assets/c51dcc10-93ef-43a3-8972-cd07db60dee9" />
 
 
 - The download test is the only one was visible because the suspicious behaviour,`Invoke-WebRequest`, existed inside the script block content itself. Which is the specific field that the detection is looking at.
