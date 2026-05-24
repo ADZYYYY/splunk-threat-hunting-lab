@@ -199,7 +199,7 @@ When PowerShell is launched from cmd.exe, Sysmon Event ID 1 captures the full Po
 
 When a new powershell.exe process is launched from inside an existing PowerShell session, PowerShell Event ID 4104 may also capture the full command typed into the parent PowerShell session. In that case, the launch flags may appear in 4104 as script block content.
 
-However, when commands are run directly inside an already existing PowerShell session, there may be no new PowerShell process launch and therefore no launch flags for Sysmon Event ID 1 to capture. In that case, PowerShell Event ID 4104 is more useful for showing the script content that was executed, while Sysmon Event ID 1 remains more useful for process creation and parent child process undestanding. 
+However, when commands are run directly inside an already existing PowerShell session, there may be no new PowerShell process launch and therefore no launch flags for Sysmon Event ID 1 to capture. In that case, PowerShell Event ID 4104 is more useful for showing the script content that was executed, while Sysmon Event ID 1 remains more useful for process creation and parent child process understanding. 
   
 
 **Note:** Security event 4688 is another good one to check however its Less rich than Sysmon and command line must be separately enabled via policy. Enabling Sysmon provides more powerful process telemetry, but combining sysmon and powershell event 4104 seems to be the most powerful combination. 
