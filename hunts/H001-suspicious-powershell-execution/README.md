@@ -30,6 +30,8 @@ Safe manual PowerShell commands were executed on the Windows endpoint to generat
 
 **Commands:**
 
+Parent Process: CMD.exe
+
 powershell.exe -NoProfile -WindowStyle Hidden -Command "Write-Output 'H001 hidden PowerShell test'"
 
 powershell.exe -NoProfile -Command "mkdir C:\Temp -Force; Invoke-WebRequest -Uri 'https://www.microsoft.com/favicon.ico' -OutFile 'C:\Temp\favicon.ico'"
