@@ -166,31 +166,40 @@ index=powershell earliest=-30m
 
 <img width="2295" height="288" alt="image" src="https://github.com/user-attachments/assets/9c52a3d5-f3cc-4efb-b633-d5b2ac64d70f" />
 
-- Here is clear evidence that powershell 4104 is simply looking at the script content and not the whole command like sysmon, no flags are included
+- Here is clear evidence that powershell 4104 is simply looking at the script content and not the whole command context like sysmon, no flags are included. This is expected activity
 - When the `Other PowerShell` events were included, PowerShell Event ID 4104 showed related script block activity such as the `Write-Output` test commands. These were not labelled as suspicious by the 4104 detection logic because the suspicious launch flags were present in the process command line captured by Sysmon, not necessarily inside the script block content captured by 4104.
 
 
 ## Lessons Learned & Findings
 
-The hunt identified PowerShell executions containing suspicious commandline patterns such as `-NoProfile`, `-ExecutionPolicy Bypass`, `-WindowStyle Hidden`, and download-related behaviour.
+The hunt identified PowerShell executions containing suspicious command line patterns such as -NoProfile, -ExecutionPolicy Bypass, -WindowStyle Hidden, and download related behaviour.
 
-Sysmon Event ID 1 is useful for identifying PowerShell process creation and command line arguments at launch time.
+Sysmon Event ID 1 is useful for identifying PowerShell process creation, including parent child process relationships and the command line used when PowerShell is launched.
 
-Commands typed inside an already running PowerShell session may not always appear as new Sysmon Event ID 1 events unless they spawn a new process.
-
-PowerShell Event ID 4104 provides deeper script block visibility and can show commands executed inside PowerShell.
+PowerShell Event ID 4104 provides deeper script block visibility and can show commands processed or executed inside PowerShell, including activity that may not appear as a new process creation event.
 
 Combining Sysmon process creation telemetry with PowerShell script block logging provides stronger investigative context than relying on either source alone.
 
-In this specific test case, Sysmon alone was enough to understand the activity because the suspicious PowerShell behaviour was visible directly in the command line.
+In this specific test case, Sysmon alone was enough to understand the activity because the suspicious PowerShell behaviour was visible directly in the command line. 
 
 **Summary:**
 
-**PowerShell Event 4104** = PowerShell script block content processed by PowerShell (
+PowerShell Event ID 4104 = Shows PowerShell script block content processed by PowerShell.
 
-**Sysmon Event 1** = Shows how PowerShell was launched and includes the command line used at the time the PowerShell process was created.
-- For e.g, in this lab, the commands were run from CMD, which called powershell.exe and passed a command to it. This created a new PowerShell process each time, which triggered a new Sysmon Event ID 1 for each PowerShell launch.
+Sysmon Event ID 1 = Shows process creation, including how PowerShell was launched and the command line used at launch time.
+
+In this lab, the commands were run from cmd.exe, which called powershell.exe and passed a command to it. This created a new PowerShell process each time, triggering a new Sysmon Event ID 1 event for each launch.
+
+
+### Additional Observation
+
+PowerShell Event ID 4104 behaviour can differ depending on how the command is executed.
+
+When PowerShell is launched from cmd.exe, Sysmon Event ID 1 captures the full PowerShell process command line, including launch arguments such as -NoProfile, -ExecutionPolicy Bypass, and -WindowStyle Hidden.
+
+When a new powershell.exe process is launched from inside an existing PowerShell session, PowerShell Event ID 4104 may also capture the full command typed into the parent PowerShell session. In that case, the launch flags may appear in 4104 as script block content.
+
+However, when commands are run directly inside an already existing PowerShell session, there may be no new PowerShell process launch and therefore no launch flags for Sysmon Event ID 1 to capture. In that case, PowerShell Event ID 4104 is more useful for showing the script content that was executed, while Sysmon Event ID 1 remains more useful for process creation and parent child process undestanding. 
   
-
 
 **Note:** Security event 4688 is another good one to check however its Less rich than Sysmon and command line must be separately enabled via policy. Enabling Sysmon provides more powerful process telemetry, but combining sysmon and powershell event 4104 seems to be the most powerful combination. 
