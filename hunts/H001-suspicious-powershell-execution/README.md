@@ -93,7 +93,7 @@ index=sysmon EventCode=1 Image="*\\powershell.exe" earliest=-30m
 
 **Results**
 
-<img width="2293" height="529" alt="image" src="https://github.com/user-attachments/assets/c99cc47f-c207-413f-aaa1-98bf645ea42c" />
+![Sysmon Event ID 1 screenshot](screenshots/SysmonscreenshotH001.png)
 
 - The Sysmon hunt query successfully identified the generated PowerShell activity and categorised each event using the `detection_reason` field. As well as assigning a severity
 - The `-NoProfile` flag was observed during testing; however, this is considered a low confidence indicator. It is commonly used by administrators, automation scripts, and deployment tooling to ensure PowerShell starts without loading user profile customisations. On its own, `-NoProfile` should not be treated as malicious and would likely be too noisy depending on the enviroment.
@@ -123,14 +123,16 @@ index=powershell earliest=-30m
 
 - Used Regex to extract the Event code and ScriptBlockText as the fields were not parsed by default
 - Using the same method of running the field which contains the command activity, through a case to assign a detection tag
-- Then using Table to display the fields which were already parsed, as well as the manual field we created using regex "ScriptBlockText"
+- Then using Table to display the fields which were already parsed, as well as the manual fields we created using regex "ScriptBlockText" and "EventCode"
 
 **Results**
 
-<img width="2164" height="161" alt="image" src="https://github.com/user-attachments/assets/c51dcc10-93ef-43a3-8972-cd07db60dee9" />
+![Sysmon hunt results screenshot](screenshots/sysmonhuntscreenshotH001.png)
+
 
 
 - The download test is the only one was visible because the suspicious behaviour,`Invoke-WebRequest`, existed inside the script block content itself. Which is the specific field that the detection is looking at.
+- In General Launch arguments such as -NoProfile, -ExecutionPolicy Bypass, and -WindowStyle Hidden are more reliably detected using process creation telemetry such as Sysmon Event ID 1 or Windows Security Event ID 4688 with command line logging enabled, however the nuance is explained at the end
 
 
 ## PowerShell Event 4104 Validation (All Events)
@@ -164,9 +166,9 @@ index=powershell earliest=-30m
 
 **Results**
 
-<img width="2295" height="288" alt="image" src="https://github.com/user-attachments/assets/9c52a3d5-f3cc-4efb-b633-d5b2ac64d70f" />
+![PowerShell Event ID 4104 screenshot](screenshots/powershell4104H001.png)
 
-- Here is clear evidence that powershell 4104 is simply looking at the script content and not the whole command context like sysmon, no flags are included. This is expected activity
+- Here is clear evidence that powershell 4104 is simply looking at the script content and not the whole command context like sysmon, no launch flags are included. This is expected activity
 - When the `Other PowerShell` events were included, PowerShell Event ID 4104 showed related script block activity such as the `Write-Output` test commands. These were not labelled as suspicious by the 4104 detection logic because the suspicious launch flags were present in the process command line captured by Sysmon, not necessarily inside the script block content captured by 4104.
 
 
