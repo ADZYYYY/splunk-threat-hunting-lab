@@ -1,4 +1,4 @@
-# H002 - WMi Event Subscription Persistence
+# H002 - WMI Event Subscription Persistence
 
 ## Hypothesis
 
