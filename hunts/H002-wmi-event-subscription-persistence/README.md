@@ -21,38 +21,34 @@ This hunt maps to MITRE ATT&CK `T1546.003` because WMI event subscriptions can b
 - https://attack.mitre.org/techniques/T1546/003/
 
 
-## Baseline Activity
-
-Before testing suspicious behaviour, normal PowerShell activity was generated using common administrative commands such as `whoami`, `hostname`, `Get-Process`, `Get-Service`, and `Test-NetConnection`.
-
-- Below Commands were run in CMD
-
-**Commands:**
-
-powershell.exe -NoProfile -Command "whoami"
-
-powershell.exe -NoProfile -Command "hostname"
-
-powershell.exe -NoProfile -Command "Get-Process | Select-Object -First 5"
-
-powershell.exe -NoProfile -Command "Get-Service | Select-Object -First 5"
-
-powershell.exe -NoProfile -Command "Test-NetConnection 192.168.37.129 -Port 9997"
-
-- This helped establish what benign PowerShell execution looked like in the lab.
-
-
-
 ## Test Method
 
-Safe manual PowerShell commands were executed on the Windows endpoint to generate suspicious looking telemetry without causing harm.
+## T1546.003-1: Persistence via WMI Event Subscription - CommandLineEventConsumer
 
-- Below Commands were run in CMD
+This test uses Atomic Red Team technique **T1546.003** to simulate persistence through a **WMI Event Subscription** using a `CommandLineEventConsumer`. 
 
-**Commands:**
+I Ran the test with the below (Required installing atomic red prereq):
 
-powershell.exe -NoProfile -WindowStyle Hidden -Command "Write-Output 'H001 hidden PowerShell test'"
+```powershell
+Invoke-AtomicTest T1546.003 -TestNumbers 1 -PathToAtomicsFolder C:\AtomicRedTeam\atomics
+```
 
-powershell.exe -NoProfile -Command "mkdir C:\Temp -Force; Invoke-WebRequest -Uri 'https://www.microsoft.com/favicon.ico' -OutFile 'C:\Temp\favicon.ico'"
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Write-Output 'H001 suspicious PowerShell test'"
+
+## Hunting for WMI Persistence with Sysmon
+
+```spl
+index=sysmon earliest=-30m (EventCode=19 OR EventCode=20 OR EventCode=21)
+| eval wmi_event_type=case(
+    EventCode=19, "WMI Event Filter Created",
+    EventCode=20, "WMI Event Consumer Created",
+    EventCode=21, "WMI Filter-to-Consumer Binding Created",
+    true(), "Other WMI Event"
+)
+| table _time host User EventCode wmi_event_type RuleName Name Query Consumer CommandLineTemplate Destination
+| rename wmi_event_type as "WMI Event Type", CommandLineTemplate as "Command Line Template"
+| sort _time
+```
+
+**Results**
+
