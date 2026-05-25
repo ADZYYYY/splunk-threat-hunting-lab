@@ -52,3 +52,5 @@ index=sysmon earliest=-30m (EventCode=19 OR EventCode=20 OR EventCode=21)
 
 **Results**
 
+![Sysmon WMI](screenshots/sysmonWMIPersistenceH002.png)
+
