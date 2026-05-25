@@ -85,6 +85,133 @@ Destination "C:\\WINDOWS\\System32\\notepad.exe"
 - Without the binding, the filter may still detect that the condition is met, and the consumer may still contain the command to run, but nothing connects them together.
 
 
+## Utilizing Event Code 1 Sysmon
+
+- Using skills learnt from https://github.com/ADZYYYY/H001-Suspicious-PowerShell-Execution I would like to identify proccesses running around the timeframe of the WMI Event Subscription created
+- We know the binding of the event occured at 2026-05-25 00:55:07.412, this can be observed in the sysmon WMI event results
+
+ ```spl
+index=sysmon EventCode=1 earliest="05/25/2026:00:53:00" latest="05/25/2026:00:57:00"
+| table _time host User ParentImage Image CommandLine ProcessId ParentProcessId
+| rename ParentImage as "Parent Process", Image as "Process", CommandLine as "Command Line"
+| sort _time 
+ ```
+
+**Results**
+
+![Sysmon WMI](screenshots/sysmonevent1H002.png)
+
+- The process creation results showed PowerShell activity around the same time as the WMI event subscription creation.
+
+- The key event was a `powershell.exe` process launching another `powershell.exe` process with a command line containing:
+
+```text
+New-CimInstance -Namespace root/subscription -ClassName __EventFilter
+New-CimInstance -Namespace root/subscription -ClassName CommandLineEventConsumer
+New-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding
+```
+
+- This showed that PowerShell was used to create the WMI event filter, command-line event consumer, and filter-to-consumer binding.
+
+- Additional `WmiPrvSE.exe` activity was observed shortly after the PowerShell command. `WmiPrvSE.exe` is the WMI Provider Host process, so this supported the conclusion that WMI activity occurred on the endpoint.
+
+
+## Additional Checks for Powershell 4104 Events 
+
+- After process creation telemetry showed PowerShell creating the WMI subscription components, I reviewed PowerShell Event ID `4104` to validate the script block content.
+
+   ```spl
+   index=powershell earliest=-60m
+    | rex "<EventID>(?<EventCode>\d+)</EventID>"
+    | rex "<Data Name='ScriptBlockText'>(?<ScriptBlockText>.*?)</Data>"
+    | search EventCode=4104
+    | search ScriptBlockText="*__EventFilter*" OR ScriptBlockText="*CommandLineEventConsumer*" OR ScriptBlockText="*__FilterToConsumerBinding*" OR ScriptBlockText="*root\\subscription*" OR ScriptBlockText="*Set-WmiInstance*" OR ScriptBlockText="*New-CimInstance*" OR ScriptBlockText="*Atomic*"
+    | table _time host EventCode ScriptBlockText
+    | sort - _time
+     ```
+
+**Results**
+
+![powershell](screenshots/4104PowershellH002.png)
+
+   - The most useful PowerShell 4104 event was the script block at `00:55:00.896`, which showed `New-CimInstance` being used to create the `__EventFilter`, `CommandLineEventConsumer`, and `__FilterToConsumerBinding`. This validated the script content responsible for creating the WMI event subscription observed in Sysmon Event IDs 19, 20, and 21.
+   - Surrounding Events not worth showing
+
+## Findings 
+
+PowerShell Event ID 4104 did not provide significantly more context than Sysmon Event ID 1 in this test, because the full WMI creation command was already visible in the Sysmon process command line. Another win for sysmon :D
+
+However, 4104 was still useful as supporting evidence because it confirmed the script block content processed by PowerShell, including the use of `New-CimInstance` to create the `__EventFilter`, `CommandLineEventConsumer`, and `__FilterToConsumerBinding`.
+
+For this hunt, Sysmon Event IDs `19`, `20`, and `21` were the primary evidence of WMI persistence object creation, Sysmon Event ID `1` showed the process responsible, and PowerShell Event ID `4104` validated the script content.
+
+- This analysis answered the key questions around the WMI persistence mechanism, when it was created, how it was configured, what action it was designed to execute, and when that action would be triggered.
+
+## Building Real detections around this
+
+Alert when WMI Event Filter, Consumer, and Binding are created on the same host within a short time window.
+Increase severity if the consumer is designed to execute powershell.exe, cmd.exe, wscript.exe, mshta.exe, rundll32.exe, or a user writable path.
+Suppress known enterprise management tools.
+
+- e.g of what this could look like
+- This could be paired with a lookup table which will filter out known WMI tools, causing less noise
+
+```spl
+index=sysmon (EventCode=19 OR EventCode=20 OR EventCode=21)
+| eval wmi_event_type=case(
+    EventCode=19, "filter",
+    EventCode=20, "consumer",
+    EventCode=21, "binding"
+)
+| eval consumer_command=coalesce(CommandLineTemplate, Destination, Consumer)
+| eval consumer_command_lower=lower(consumer_command)
+| eval suspicious_consumer=case(
+    like(consumer_command_lower,"%powershell.exe%"), "PowerShell consumer",
+    like(consumer_command_lower,"%cmd.exe%"), "CMD consumer",
+    like(consumer_command_lower,"%wscript.exe%"), "Windows Script Host consumer",
+    like(consumer_command_lower,"%cscript.exe%"), "Windows Script Host consumer",
+    like(consumer_command_lower,"%mshta.exe%"), "MSHTA consumer",
+    like(consumer_command_lower,"%rundll32.exe%"), "Rundll32 consumer",
+    like(consumer_command_lower,"%regsvr32.exe%"), "Regsvr32 consumer",
+    like(consumer_command_lower,"%\\users\\%"), "User-writable path",
+    like(consumer_command_lower,"%\\programdata\\%"), "User-writable path",
+    like(consumer_command_lower,"%\\appdata\\%"), "User-writable path",
+    like(consumer_command_lower,"%\\temp\\%"), "User-writable path",
+    true(), "None"
+)
+| bin _time span=5m
+| stats 
+    earliest(_time) as first_seen
+    latest(_time) as last_seen
+    values(EventCode) as event_codes
+    dc(EventCode) as unique_event_codes
+    values(wmi_event_type) as wmi_event_types
+    values(Name) as names
+    values(Query) as queries
+    values(Consumer) as consumers
+    values(CommandLineTemplate) as command_line_templates
+    values(Destination) as destinations
+    values(suspicious_consumer) as suspicious_indicators
+    values(User) as users
+    count as event_count
+    by _time host
+| eval has_filter=if(mvfind(event_codes,"19")>=0,1,0)
+| eval has_consumer=if(mvfind(event_codes,"20")>=0,1,0)
+| eval has_binding=if(mvfind(event_codes,"21")>=0,1,0)
+| where has_filter=1 AND has_consumer=1 AND has_binding=1
+| eval severity=case(
+    mvfind(suspicious_indicators,"PowerShell consumer")>=0, "High",
+    mvfind(suspicious_indicators,"CMD consumer")>=0, "High",
+    mvfind(suspicious_indicators,"Windows Script Host consumer")>=0, "High",
+    mvfind(suspicious_indicators,"MSHTA consumer")>=0, "High",
+    mvfind(suspicious_indicators,"Rundll32 consumer")>=0, "High",
+    mvfind(suspicious_indicators,"Regsvr32 consumer")>=0, "High",
+    mvfind(suspicious_indicators,"User-writable path")>=0, "Medium",
+    true(), "Medium"
+)
+| table first_seen last_seen host users event_codes wmi_event_types names queries command_line_templates consumers destinations suspicious_indicators severity event_count
+| sort - first_seen
+```
 
 
 
