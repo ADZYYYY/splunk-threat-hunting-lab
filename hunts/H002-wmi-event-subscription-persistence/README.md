@@ -147,6 +147,38 @@ For this hunt, Sysmon Event IDs `19`, `20`, and `21` were the primary evidence o
 
 - This analysis answered the key questions around the WMI persistence mechanism, when it was created, how it was configured, what action it was designed to execute, and when that action would be triggered.
 
+
+## Removal of WMI Persistance
+
+- There are many ways to remove the WMI entries, if you have physical access to the machine or remote access you can simply download Autoruns from sysinternals - https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns , select the WMI tab, and remove the malicous entries
+ ![Autoruns](screenshots/WMIPersistenceH002.png)
+
+
+- From an RTR perspective, for e.g using crowdstrike you can utilize the following commands in the runscript function
+
+**Example review commands through RTR/PowerShell:**
+```
+Get-WmiObject -Namespace root\Subscription -Class __EventFilter -Filter "Name='AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example'"
+
+Get-WmiObject -Namespace root\Subscription -Class CommandLineEventConsumer -Filter "Name='AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example'"
+
+Get-WmiObject -Namespace root\Subscription -Class __FilterToConsumerBinding -Filter "__Path LIKE '%AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example%'"
+```
+
+**Example removal commands:**
+```
+Get-WmiObject -Namespace root\Subscription -Class __FilterToConsumerBinding -Filter "__Path LIKE '%AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example%'" |
+Remove-WmiObject -Verbose
+
+Get-WmiObject -Namespace root\Subscription -Class CommandLineEventConsumer -Filter "Name='AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example'" |
+Remove-WmiObject -Verbose
+
+Get-WmiObject -Namespace root\Subscription -Class __EventFilter -Filter "Name='AtomicRedTeam-WMIPersistence-CommandLineEventConsumer-Example'" |
+Remove-WmiObject -Verbose 
+```
+
+- After removal, you can rerun Get-WmiObject to review the deletion was sucessfull
+
 ## Building Real detections around this
 
 Alert when WMI Event Filter, Consumer, and Binding are created on the same host within a short time window.
