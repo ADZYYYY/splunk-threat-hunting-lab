@@ -154,7 +154,7 @@ For this hunt, Sysmon Event IDs `19`, `20`, and `21` were the primary evidence o
  ![Autoruns](screenshots/WMIPersistenceH002.png)
 
 
-- From an RTR perspective, for e.g using crowdstrike you can utilize the following commands in the runscript function
+- From an RTR perspective, for e.g using crowdstrike you can utilize the following commands in the runscript function. These can also just be ran in powershell on the host.
 
 **Example review commands through RTR/PowerShell:**
 ```
