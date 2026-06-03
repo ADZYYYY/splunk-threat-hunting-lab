@@ -10,6 +10,16 @@ This technique involves three key actions:
 - Writing a malicious pre-commit script to that directory
 - Modifying the global Git configuration to redirect all repositories to use the attacker-controlled hooks path via `core.hooksPath`
 
+  What makes this technique particularly effective is that it requires no malicious 
+binaries, no new processes introduced to the system, and no modifications to 
+existing executables. Every component of the attack — `git.exe`, `sh.exe`, 
+`grep.exe`, `curl.exe` — is a legitimate, signed binary already present on any 
+developer machine running Git for Windows. The only artefacts written to disk are 
+a shell script and a configuration change, both of which blend naturally into a 
+developer environment. This significantly limits the effectiveness of 
+signature-based antivirus and makes the technique heavily reliant on behavioural 
+detection to identify.
+
 
 ## MITRE ATT&CK Mapping
 
