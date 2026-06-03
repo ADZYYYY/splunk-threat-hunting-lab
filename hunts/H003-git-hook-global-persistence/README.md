@@ -40,7 +40,7 @@ This hunt maps to MITRE ATT&CK `T1546` because the pre-commit hook executes auto
 
 | Machine | OS | IP | Role |
 |---|---|---|---|
-| Kali Linux | Kali Linux | 192.168.37.132 | Attacker, however in this context, it was simply used to create the script to be hosted on github and act as a c2 |
+| Kali | Kali Linux | 192.168.37.132 | Attacker, however in this context, it was simply used to create the script to be hosted on github and act as a c2 |
 | Victim | Windows 11 | 192.168.37.130 | Victim (Git + Sysmon) |
 | Splunk | Ubuntu Server | 192.168.37.129 | SIEM |
 
