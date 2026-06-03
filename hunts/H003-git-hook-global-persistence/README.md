@@ -243,7 +243,9 @@ index=sysmon EventCode=11 earliest=-60m
 C:\ProgramData\.git-hooks\pre-commit
 ```
 - The pre-commit hook was written to `C:\ProgramData\.git-hooks\` — a location completely outside any individual Git repository
-- Legitimate Git hooks live inside `.git\hooks\` within a specific project. A pre-commit file appearing in `ProgramData` is highly suspicious and has no legitimate developer use case
+- A pre-commit hook in C:\ProgramData\.git-hooks is suspicious when newly created by PowerShell, paired with a global core.hooksPath change, and followed by credential discovery or outbound network activity.
+
+
 
 **gitconfig.lock created** 2026-06-03 2:09:26
 ```
