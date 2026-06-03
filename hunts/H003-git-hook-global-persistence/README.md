@@ -303,7 +303,7 @@ exfiltration chain even without the process name being resolved.
 
 ## Findings
 
-PowerShell Event ID 4104 was the earliest and loudest detection point, capturing the full IEX delivery script in memory before anything was written to disk. This is consistent with findings from H001 — fileless delivery via IEX does not evade Script Block Logging, as the PowerShell engine logs what it executes regardless of how the script was delivered.
+PowerShell Event ID 4104 was the earliest and loudest detection point, capturing the full IEX delivery script in memory before anything was written to disk. This is consistent with findings from H001, fileless delivery via IEX does not evade Script Block Logging, as the PowerShell engine logs what it executes regardless of how the script was delivered.
 
 Sysmon Event ID 11 returned no results for the hook file creation or gitconfig modification. This is a detection gap caused by the default Sysmon configuration using `ruledefault="exclude"` for FileCreate events — `C:\ProgramData\` and gitconfig paths were not included in the monitoring rules. The persistence was instead confirmed through MFT and USN journal forensic artefacts, which captured the creation of `C:\ProgramData\.git-hooks\pre-commit` and the atomic write pattern of the gitconfig modification. This highlights the value of collecting raw filesystem artefacts alongside endpoint telemetry during incident response, Sysmon alone was insufficient to confirm persistence establishment with this configuration.
 
