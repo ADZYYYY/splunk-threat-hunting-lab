@@ -323,9 +323,29 @@ between the process chain and the network connection confirms the full
 exfiltration chain even without the process name being resolved.
 
 
+## Attack Timeline
 
+All timestamps in **BST (UTC+1)** to match Splunk. MFT/USN Journal timestamps 
+are UTC and have been adjusted by +1 for consistency.
 
-## Findings
+| Time (BST) | Event | Source |
+|---|---|---|
+| `03:09:25` | Developer executes IEX one-liner from compromised developer site | Sysmon / Event ID 4104 |
+| `03:09:26` | `setup.ps1` runs in memory — `C:\ProgramData\.git-hooks\` directory created | USN Journal |
+| `03:09:26` | `pre-commit` hook written to `C:\ProgramData\.git-hooks\pre-commit` | USN Journal |
+| `03:09:26` | `.gitconfig.lock` created → renamed to `.gitconfig` — `core.hooksPath` set globally | USN Journal |
+| `03:09:26` | Script exits, victim sees `Assessment complete.` — nothing appears suspicious | — |
+| `03:16:00` | Developer makes a routine `git commit` in their project | — |
+| `03:16:51` | `sh.exe` spawns `grep.exe` — credential files scanned on Desktop/Documents/Downloads | Sysmon / Event ID 1 |
+| `03:16:53` | `sh.exe` spawns `curl.exe` — exfiltration payload prepared | Sysmon / Event ID 1 |
+| `03:16:56` | Outbound TCP connection to `192.168.37.132:8080` — data exfiltrated to C2 | Sysmon / Event ID 3 |
+| `03:16:56` | C2 listener receives hostname, username, repo path and credential file contents | Kali C2 terminal |
+
+**Key observation:** The entire persistence setup took less than one second (`03:09:25` → `03:09:26`). 
+The developer had no indication anything happened. The hook then silently fired over 
+seven minutes later during a routine commit, with no output, no errors, and the 
+commit completing successfully.
+
 
 ## Findings
 
