@@ -97,7 +97,7 @@ python3 c2.py
 
 
 
-**Step 2 — Social engineering delivery, User running "Audit script" from a comprimised dev website **
+**Step 2 — Social engineering delivery, User running "Audit script" from a comprimised dev website**
 
 
 > **Note:** While this test describes a user being socially engineered, resulting in running a powershell command, the same persistence mechanism can be achieved through several other attack vectors that require no direct user interaction beyond normal developer activity.
