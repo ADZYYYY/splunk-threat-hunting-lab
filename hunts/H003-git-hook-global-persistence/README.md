@@ -401,6 +401,8 @@ Confirm there is no `hooksPath` entry under `[core]`.
 
 ## Building Real Detections Around This
 
+Note: This was an example created in my lab, would likely look very different in a enterprise enviroment where sysmon is not relied upon. However the execution chain and file writes are still good indicators, if the data is available to query.
+
 Alert when a `pre-commit` file is created outside of a `.git\hooks\` directory, or when `core.hooksPath` is modified in any gitconfig file. Increase severity when `sh.exe` or `curl.exe` spawned by `git.exe` makes outbound network connections.
 
 ```spl
