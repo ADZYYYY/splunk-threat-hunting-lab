@@ -240,12 +240,48 @@ index=sysmon EventCode=11 earliest=-60m
 
 - No results for the above query, lets investigate why
 
-![Splunk Event 11](screenshots/screenshotsEventid11nothingobservedcuzofgapinsysmon.png)
+![Splunk Event 4104](screenshots/Eventid11nothingobservedcuzofgapinsysmon.png)
 
 - Making the query more broad we can clearly see after the malcious powershell command was executed at 03:09:25.696, no surrounding events were observed for file creation of the git-hooks/ pre commit files
 - Sysmon Event ID 11 FileCreate monitoring uses `ruledefault="exclude"`, meaning only paths explicitly listed in the Sysmon configuration are monitored. The default configuration did not include `C:\ProgramData\` or `.gitconfig` paths, so the hook file creation and gitconfig modification were not captured by Event ID 11 despite Sysmon being active on the endpoint.
+- Now we will correlate with MFT/USN Journal
 
-Two key events should be observed:
+
+### MFT/USN Journal — Using forensic artefacts to show the file created/rename events
+
+**Obtaining MFT/USN Journal**
+
+![ForensicArtefacts](screenshots/obtainingforensicartefacts.png)
+
+- Using FTK Imager, I simply added my Logical file system as evidence, and navigated to root to find the MFT File, then $extend to find the USL journal. From here I have the option to create a copy, where I can later use tools such as MFTECmd.exe to parse the data.
+
+**Parsing Data**
+
+```
+.\MFTECmd.exe -f 'C:\Users\Adam\Desktop\NTFS_Artifacts\$MFT.copy0' --csv 'C:\Users\Adam\Desktop\output' --csvf mft.csv
+```
+```
+.\MFTECmd.exe -f 'C:\Users\Adam\Desktop\NTFS_Artifacts\$J.copy0' --csv 'C:\Users\Adam\Desktop\output' --csvf usn.csv
+```
+![ForensicArtefacts](screenshots/ParsingFiles.png)
+
+**Viewing in TimeLine Explorer to Find Evidence**
+
+- So in this case, we will focus on the USN Journal, as we are more interested on what happened, rather than the current state of the files on disk, however MFT will provide where the file was located
+
+*USN*
+
+![ForensicArtefacts](screenshots/USN.png)
+![ForensicArtefacts](screenshots/usn2.png)
+![ForensicArtefacts](screenshots/usn3.png)
+
+*MFT*
+
+![ForensicArtefacts](screenshots/mft.png)
+![ForensicArtefacts](screenshots/mft2.png)
+![ForensicArtefacts](screenshots/mft3.png)
+
+- Here we can observe exactly what we are looking for, so from the powershell events that happened at 03:09 (Splunk configured to London time), we can see directly what happened.
 
 **pre-commit file created**
 ```
@@ -260,10 +296,6 @@ C:\Users\Adam\AppData\Local\Programs\Git\etc\gitconfig
 ```
 - This is the system level Git config for Git for Windows installed in the user's AppData, it applies to all of the user's Git operations
 - The modification was confirmed via the lock-file-to-rename pattern in the USN journal: `.gitconfig.lock` created → data added → renamed to `.gitconfig`, which is Git's atomic write behaviour
-
-### MFT/USN Journal — Using forensic artefacts to show the file created/rename events
-
-
 
 
 
