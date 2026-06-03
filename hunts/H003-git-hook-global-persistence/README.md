@@ -259,7 +259,7 @@ C:\Users\Adam\AppData\Local\Programs\Git\etc\gitconfig
 
 ### Event ID 1 — Process Creation (Hook Execution Chain)
 
-When the developer ran `git commit`, the pre-commit hook fired. Sysmon Event ID 1 captures the full process chain, showing `git.exe` spawning `sh.exe`, which then spawned `grep.exe` and `curl.exe`.
+When the developer ran `git commit`, the pre-commit hook fired. Sysmon Event ID 1 should capture the full process chain, showing `git.exe` spawning `sh.exe`, which then spawned `grep.exe` and `curl.exe`.
 
 ```spl
 index=sysmon EventCode=1 earliest=-24h
