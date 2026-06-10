@@ -98,7 +98,7 @@ Select-String -Path .\* -Pattern `
   -CaseSensitive:$false
 ```
 
-- Search terms included known leaked indicators and exact question fragments.
+- Search terms included known leaked indicators and exact question fragments. (Certain searches redacted for integrity)
 
 - No plaintext matches were found in the current deployment during testing.
 
