@@ -16,7 +16,7 @@ The issue was discovered while using GPT to help with a lab question. The tool p
 
 ![Comms](Screenshots/GPTPromt.png)
 
--  When navigating to the URL, we can observe a lock screen. GPT straight up provided the answer to the question..., However, was not very useful in terms of explaining how it potentially bypassed a lock screen :D, but it at least provided the source, being a inksec.io url. 
+-  When navigating to the URL, we can observe a lock screen. GPT provided the answer directly..., However, was not very useful in terms of explaining how it potentially bypassed a lock screen :D, but it at least provided the source, being a inksec.io url. 
 
 ![Comms](Screenshots/Lockedscreen.png)
 
